@@ -1,0 +1,45 @@
+# Node / frontend
+node_modules/
+.next/
+out/
+.next-cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Environment files
+.env
+.env.*
+.env.local
+.env.*.local
+
+# Secrets / credentials
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials/
+service-account*.json
+**/secrets/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Build artifacts
+dist/
+build/
+coverage/
+
+# Keep templates and source files tracked
+!*.example
+!**/.gitkeep

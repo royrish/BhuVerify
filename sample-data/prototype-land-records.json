@@ -1,0 +1,28 @@
+{
+  "documents": [
+    {
+      "filename": "sample_land_record_001.pdf",
+      "document_type": "land_title_record",
+      "language": "en",
+      "source": "district_office_scan",
+      "processing_status": "pending_review",
+      "land_record": {
+        "owner_name": "Asha Devi",
+        "survey_number": "12A/45",
+        "khata_number": "K-118/22",
+        "area": 3.5,
+        "area_unit": "acres",
+        "village": "Rajnagar",
+        "tehsil": "Sadar",
+        "district": "Varanasi",
+        "land_classification": "Agricultural",
+        "ownership_details": "Patta in the name of Asha Devi",
+        "mutation_information": "No mutation registered",
+        "registration_information": "Registered on 14 Jan 2024",
+        "overall_confidence": 91.2,
+        "validation_status": "needs_review",
+        "verification_status": "pending"
+      }
+    }
+  ]
+}
