@@ -14,6 +14,7 @@ from app.services.reference_validation import detect_duplicate_records, run_cros
 from app.gis_engine import generate_cadastral_boundary
 
 router = APIRouter(prefix="/api")
+_document_gis_cache: dict[str, dict] = {}
 
 
 class VerifyRequest(BaseModel):
@@ -212,21 +213,25 @@ async def extract_document_fields(document_id: str):
     # Compute dynamic Cadastral GIS boundary using extracted OCR fields
     gis_boundary = None
     try:
-        raw_area = extracted_record.get("area") or 1.0
-        try:
-            parsed_area = float(str(raw_area).split()[0])
-        except (ValueError, TypeError, IndexError):
-            parsed_area = 1.0
+        raw_area = extracted_record.get("area")
+        parsed_area = float(str(raw_area).split()[0]) if raw_area is not None else 0.0
+        area_unit = extracted_record.get("area_unit")
+        tehsil = extracted_record.get("tehsil")
+        village = extracted_record.get("village")
+
+        if parsed_area <= 0 or not area_unit or not (tehsil or village):
+            raise ValueError("Required extracted area and location fields are unavailable")
 
         gis_boundary = await generate_cadastral_boundary(
-            village=str(extracted_record.get("village") or ""),
-            tehsil=str(extracted_record.get("tehsil") or ""),
+            village=str(village or ""),
+            tehsil=str(tehsil or ""),
             district=str(extracted_record.get("district") or ""),
             state=str(extracted_record.get("state") or ""),
-            survey_number=str(extracted_record.get("survey_number") or extracted_record.get("khata_number") or "N/A"),
+            survey_number=str(extracted_record.get("survey_number") or extracted_record.get("khata_number") or ""),
             land_area=parsed_area,
-            area_unit=str(extracted_record.get("area_unit") or "Acres"),
+            area_unit=str(area_unit),
         )
+        print(f"GIS boundary generated for document {document_id}: {gis_boundary}")
     except Exception as gis_err:
         print(f"Warning: Cadastral boundary calculation skipped: {gis_err}")
 
@@ -238,6 +243,53 @@ async def extract_document_fields(document_id: str):
         "gis_boundary": gis_boundary,
         **confidence,
     }
+
+
+@router.get("/documents/{document_id}/gis")
+async def get_document_gis(document_id: str):
+    supabase = supabase_client()
+    response = supabase.table("land_records").select("*").eq("document_id", document_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=404, detail="Document not found or has no extracted record.")
+
+    record = response.data[0]
+    survey_number = record.get("survey_number") or record.get("khata_number")
+    village = record.get("village")
+    tehsil = record.get("tehsil")
+    area = record.get("area")
+    area_unit = record.get("area_unit")
+
+    print(
+        f"GIS request: document_id={document_id}\n"
+        f"Extracted GIS fields: survey_number={survey_number}, village={village}, "
+        f"tehsil={tehsil}, area={area}, area_unit={area_unit}"
+    )
+
+    if not survey_number or not village or not tehsil or area is None or not area_unit:
+        raise HTTPException(status_code=422, detail="Insufficient cadastral information to generate boundary.")
+
+    boundary = _document_gis_cache.get(document_id)
+    if boundary is None:
+        try:
+            boundary = await generate_cadastral_boundary(
+                village=str(village),
+                tehsil=str(tehsil),
+                district=str(record.get("district") or ""),
+                state=str(record.get("state") or ""),
+                survey_number=str(survey_number),
+                land_area=float(area),
+                area_unit=str(area_unit),
+            )
+            _document_gis_cache[document_id] = boundary
+        except Exception as error:
+            print(f"GIS result: status=ERROR geojson=False center=None error={error}")
+            raise HTTPException(status_code=422, detail="Spatial boundary could not be generated from the extracted record.") from error
+
+    print(
+        f"GIS result: status={boundary.get('status')} "
+        f"geojson={bool(boundary.get('geojson'))} center={boundary.get('center')}"
+    )
+    return {"document_id": document_id, "extracted_record": record, "gis_boundary": boundary}
 
 
 @router.post("/documents/{document_id}/validate")

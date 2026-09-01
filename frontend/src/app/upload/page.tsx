@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { uploadDocumentToSupabase } from "@/lib/documents";
 import { MAX_FILE_SIZE_MB, SUPPORTED_FILE_TYPES } from "@/lib/document-types";
 
@@ -157,6 +158,9 @@ export default function UploadPage() {
           <p><strong>Filename:</strong> {result.filename}</p>
           <p><strong>Storage path:</strong> {result.storage_path}</p>
           <p><strong>Status:</strong> {result.processing_status}</p>
+          <Link href={`/documents/${encodeURIComponent(result.id)}`} style={{ display: "inline-block", marginTop: 12, color: "#075985", fontWeight: 700 }}>
+            Open document to run extraction
+          </Link>
         </div>
       )}
     </main>

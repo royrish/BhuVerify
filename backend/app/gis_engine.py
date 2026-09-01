@@ -71,8 +71,7 @@ async def geocode_cadastral_anchor(village: Optional[str], tehsil: Optional[str]
             except Exception:
                 continue
 
-    # Fallback to Kelambakkam / Tiruporur coordinates
-    return 12.7844, 80.2201, "Kelambakkam, Tiruporur, Tamil Nadu, India"
+    raise ValueError("Could not geocode the extracted land-record location")
 
 def construct_geodesic_polygon(center_lat: float, center_lon: float, target_area_sq_m: float) -> Tuple[Dict[str, Any], float]:
     """Generates a closed WGS84 geodesic boundary polygon with the exact target area."""
@@ -104,40 +103,44 @@ def construct_geodesic_polygon(center_lat: float, center_lon: float, target_area
     return mapping(poly), round(computed_sq_m, 2)
 
 async def generate_cadastral_boundary(
-    village: Optional[str] = None,
-    tehsil: Optional[str] = None,
-    district: Optional[str] = None,
-    state: Optional[str] = None,
+    village: Optional[str] = "",
+    tehsil: Optional[str] = "",
+    district: Optional[str] = "",
+    state: Optional[str] = "",
     survey_number: str = "N/A",
     land_area: float = 1.0,
-    area_unit: Optional[str] = "Acres",
+    area_unit: str = "Acres",
 ) -> Dict[str, Any]:
-    """Orchestrates geocoding and geodesic polygon construction for a land parcel."""
-    target_area_sq_m = normalize_area_to_sq_meters(land_area, area_unit)
-    center_lat, center_lon, display_name = await geocode_cadastral_anchor(
-        village=village, tehsil=tehsil, district=district, state=state
-    )
-    polygon_geojson, calculated_area = construct_geodesic_polygon(
-        center_lat=center_lat, center_lon=center_lon, target_area_sq_m=target_area_sq_m
-    )
+    """
+    Generates a cadastral boundary polygon from extracted OCR land-record fields.
 
+    This is a high-level wrapper that combines geocoding, area normalization,
+    and polygon construction into a single operation for direct OCR integration.
+
+    Returns:
+        GeoJSON Feature with geometry and cadastral properties
+    """
+    # 1. Normalize area to square meters
+    area_sq_m = normalize_area_to_sq_meters(land_area, area_unit)
+
+    # 2. Geocode location to get lat/lon
+    lat, lon, location_name = await geocode_cadastral_anchor(village, tehsil, district, state)
+
+    # 3. Construct the polygon boundary
+    polygon_geojson, computed_sq_m = construct_geodesic_polygon(lat, lon, area_sq_m)
+
+    # 4. Return structured GeoJSON feature
     return {
-        "type": "FeatureCollection",
-        "features": [
-            {
-                "type": "Feature",
-                "geometry": polygon_geojson,
-                "properties": {
-                    "survey_number": survey_number,
-                    "village": village,
-                    "tehsil": tehsil,
-                    "district": district,
-                    "state": state,
-                    "target_area": land_area,
-                    "unit": area_unit,
-                    "calculated_sq_meters": calculated_area,
-                    "geocoded_location": display_name,
-                },
+        "status": "SUCCESS",
+        "center": [lat, lon],
+        "geojson": {
+            "type": "Feature",
+            "geometry": polygon_geojson,
+            "properties": {
+                "survey_no": survey_number,
+                "area_sq_m": computed_sq_m,
+                "location": location_name,
+                "source": "ocr_extraction",
             }
-        ],
+        }
     }

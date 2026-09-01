@@ -343,6 +343,19 @@ export default function DocumentDetailPage() {
                     </div>
                   </div>
                 )}
+                {extractionResult && id && (
+                  <Link
+                    href={`/gis?documentId=${encodeURIComponent(id)}`}
+                    style={{
+                      display: "inline-block",
+                      marginTop: 16,
+                      color: "#075985",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Open extracted record in GIS
+                  </Link>
+                )}
               </div>
 
               {/* Validation Section */}

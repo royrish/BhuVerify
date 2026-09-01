@@ -68,6 +68,13 @@ export type ExtractionResult = {
   duplicate_score?: number;
   matches?: DuplicateMatch[];
   validation_status?: string;
+  gis_boundary?: CadastralBoundary | null;
+};
+
+export type CadastralBoundary = {
+  status: string;
+  center: [number, number];
+  geojson: GeoJSON.Feature<GeoJSON.Polygon>;
 };
 
 export type ValidationResult = {
