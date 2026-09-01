@@ -102,3 +102,42 @@ def construct_geodesic_polygon(center_lat: float, center_lon: float, target_area
     computed_sq_m = poly.area * (111319.5 * 111319.5 * math.cos(lat_rad))
 
     return mapping(poly), round(computed_sq_m, 2)
+
+async def generate_cadastral_boundary(
+    village: Optional[str] = None,
+    tehsil: Optional[str] = None,
+    district: Optional[str] = None,
+    state: Optional[str] = None,
+    survey_number: str = "N/A",
+    land_area: float = 1.0,
+    area_unit: Optional[str] = "Acres",
+) -> Dict[str, Any]:
+    """Orchestrates geocoding and geodesic polygon construction for a land parcel."""
+    target_area_sq_m = normalize_area_to_sq_meters(land_area, area_unit)
+    center_lat, center_lon, display_name = await geocode_cadastral_anchor(
+        village=village, tehsil=tehsil, district=district, state=state
+    )
+    polygon_geojson, calculated_area = construct_geodesic_polygon(
+        center_lat=center_lat, center_lon=center_lon, target_area_sq_m=target_area_sq_m
+    )
+
+    return {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "geometry": polygon_geojson,
+                "properties": {
+                    "survey_number": survey_number,
+                    "village": village,
+                    "tehsil": tehsil,
+                    "district": district,
+                    "state": state,
+                    "target_area": land_area,
+                    "unit": area_unit,
+                    "calculated_sq_meters": calculated_area,
+                    "geocoded_location": display_name,
+                },
+            }
+        ],
+    }
