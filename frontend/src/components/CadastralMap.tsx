@@ -74,7 +74,8 @@ export default function CadastralMap({
     async function fetchParcelGeometry() {
       if (!tehsil || !landArea) return;
       try {
-        const res = await fetch("http://localhost:8001/api/gis/plot-parcel", {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+        const res = await fetch(`${apiUrl}/api/gis/plot-parcel`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
