@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.documents import router as documents_router
 from app.config import FRONTEND_ORIGINS
-
+from app.api.gis import router as gis_router
 app = FastAPI(title="BhuVerify AI API", version="0.1.0")
 
 app.add_middleware(
@@ -15,7 +15,7 @@ app.add_middleware(
 )
 
 app.include_router(documents_router)
-
+app.include_router(gis_router, prefix="/api")
 
 @app.get("/api/health")
 def health_check():
