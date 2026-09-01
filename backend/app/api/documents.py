@@ -11,6 +11,7 @@ from app.services.extraction import CANONICAL_FIELDS, extract_land_record
 from app.services.ocr import OcrProcessingError, process_document
 from app.services.persistence import get_verification_snapshot, persist_extraction
 from app.services.reference_validation import detect_duplicate_records, run_cross_record_validation
+from app.gis_engine import generate_cadastral_boundary
 
 router = APIRouter(prefix="/api")
 
@@ -208,11 +209,33 @@ async def extract_document_fields(document_id: str):
     except Exception as error:
         raise HTTPException(status_code=502, detail=f"Structured record persistence failed: {error}") from error
 
+    # Compute dynamic Cadastral GIS boundary using extracted OCR fields
+    gis_boundary = None
+    try:
+        raw_area = extracted_record.get("area") or 1.0
+        try:
+            parsed_area = float(str(raw_area).split()[0])
+        except (ValueError, TypeError, IndexError):
+            parsed_area = 1.0
+
+        gis_boundary = await generate_cadastral_boundary(
+            village=str(extracted_record.get("village") or ""),
+            tehsil=str(extracted_record.get("tehsil") or ""),
+            district=str(extracted_record.get("district") or ""),
+            state=str(extracted_record.get("state") or ""),
+            survey_number=str(extracted_record.get("survey_number") or extracted_record.get("khata_number") or "N/A"),
+            land_area=parsed_area,
+            area_unit=str(extracted_record.get("area_unit") or "Acres"),
+        )
+    except Exception as gis_err:
+        print(f"Warning: Cadastral boundary calculation skipped: {gis_err}")
+
     return {
         "document_id": document_id,
         "raw_text": ocr_result["raw_text"],
         "extracted_record": extracted_record,
         "land_record_id": land_record_id,
+        "gis_boundary": gis_boundary,
         **confidence,
     }
 
