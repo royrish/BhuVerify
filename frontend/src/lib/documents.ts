@@ -1,4 +1,4 @@
-import type { DocumentRecord } from "@/lib/document-types";
+import type { DocumentRecord } from "./document-types";
 
 export async function listDocuments(): Promise<DocumentRecord[]> {
   const apiUrl = getApiUrl();
@@ -101,11 +101,13 @@ export type DashboardStats = {
   validation_overview: { passed: number; warnings: number; errors: number };
   recent_records: DocumentRecord[];
 };
+
 export type VerificationSnapshot = {
   land_record: DocumentRecord & Record<string, unknown>;
   extracted_fields: Array<{ field_name: string; extracted_value: string | null; confidence: number; verification_status: string }>;
   validation_results: ValidationResult[];
   verification_actions: Array<{ id?: string; field_name: string | null; old_value: string | null; new_value: string | null; action: string; comment: string | null; timestamp: string }>;
+  duplicate_alert?: { found: boolean; message: string; matched_fields: string[] };
 };
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -194,15 +196,12 @@ export async function verifyDocument(documentId: string, fields: Record<string, 
 }
 
 function getApiUrl() {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiUrl) {
-    throw new Error("NEXT_PUBLIC_API_URL is missing from the frontend .env.local file.");
-  }
-
+  // Uses environment variable or safely falls back to your active port 8001 backend
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
   return apiUrl;
 }
 
-export async function uploadDocumentToSupabase(file: File, documentId: string) {
+export async function uploadDocumentToSupabase(file: File, documentId?: string) {
   const apiUrl = getApiUrl();
 
   const formData = new FormData();
@@ -220,4 +219,3 @@ export async function uploadDocumentToSupabase(file: File, documentId: string) {
 
   return payload as DocumentRecord;
 }
-

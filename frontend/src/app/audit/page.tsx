@@ -1,18 +1,14 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   listDocuments,
-  getDocumentById,
   getDocumentVerification,
   verifyDocument,
-  type VerificationSnapshot,
 } from "@/lib/documents";
 import type { DocumentRecord } from "@/lib/document-types";
-import { CANONICAL_FIELDS } from "@/lib/document-types";
-import { DocumentPreview } from "@/components/DocumentPreview";
-import { AuditHistory } from "@/components/AuditHistory";
 import styles from "../page.module.css";
 
 const navigation = [
@@ -25,141 +21,132 @@ const navigation = [
   { label: "Settings", href: "/settings" },
 ];
 
-const FIELD_LABELS: Record<string, string> = {
-  owner_name: "Owner Name",
-  survey_number: "Khasra / Survey #",
-  khata_number: "Khata Number",
-  area: "Land Area",
-  area_unit: "Area Unit",
-  village: "Village",
-  tehsil: "Tehsil / Taluk",
-  district: "District",
-  land_classification: "Classification",
-  ownership_details: "Ownership Details",
-  mutation_information: "Mutation Information",
-  registration_information: "Registration Information",
-};
-
 export default function AuditPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const initialDocId = searchParams.get("documentId");
+
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-  const [activeDoc, setActiveDoc] = useState<DocumentRecord | null>(null);
-  const [snapshot, setSnapshot] = useState<VerificationSnapshot | null>(null);
-  const [editableFields, setEditableFields] = useState<Record<string, string>>({});
+  const [selectedDocId, setSelectedDocId] = useState<string | null>(initialDocId);
+  const [searchFilter, setSearchFilter] = useState<string>("");
+  const [loadingDocs, setLoadingDocs] = useState<boolean>(true);
+  const [loadingDetails, setLoadingDetails] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
+
+  // Canonical Land Record Form Fields
+  const [ownerName, setOwnerName] = useState<string>("");
+  const [surveyNumber, setSurveyNumber] = useState<string>("");
+  const [khataNumber, setKhataNumber] = useState<string>("");
+  const [landArea, setLandArea] = useState<string>("");
+  const [areaUnit, setAreaUnit] = useState<string>("Acres");
+  const [village, setVillage] = useState<string>("");
+  const [tehsil, setTehsil] = useState<string>("");
+  const [district, setDistrict] = useState<string>("");
   const [remarks, setRemarks] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(true);
-  const [actionLoading, setActionLoading] = useState<boolean>(false);
-  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
-  async function refreshQueue(selectId?: string) {
-    try {
-      const rows = await listDocuments();
-      setDocuments(rows);
-      if (selectId) {
-        setSelectedDocId(selectId);
-      } else if (rows.length > 0 && !selectedDocId) {
-        setSelectedDocId(rows[0].id);
-      }
-    } catch (err) {
-      console.warn("Unable to load document queue:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Load document catalog
   useEffect(() => {
-    refreshQueue();
-  }, []);
+    async function load() {
+      setLoadingDocs(true);
+      try {
+        const rows = await listDocuments();
+        setDocuments(rows);
+        if (rows.length > 0) {
+          if (initialDocId && rows.some((d) => d.id === initialDocId)) {
+            setSelectedDocId(initialDocId);
+          } else if (!selectedDocId) {
+            setSelectedDocId(rows[0].id);
+          }
+        }
+      } catch (err) {
+        console.warn("Could not load audit documents:", err);
+      } finally {
+        setLoadingDocs(false);
+      }
+    }
+    load();
+  }, [initialDocId]);
 
+  // Load active document details and preview
   useEffect(() => {
     if (!selectedDocId) return;
-    const docId: string = selectedDocId;
 
-    async function loadDocumentDetails() {
-      setLoading(true);
-      setStatusMessage(null);
+    async function loadData() {
+      setLoadingDetails(true);
+      setMessage(null);
       try {
-        const [docData, snapData] = await Promise.all([
-          getDocumentById(docId),
-          getDocumentVerification(docId),
-        ]);
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+        setPreviewUrl(`${apiUrl}/api/documents/${selectedDocId}/preview`);
 
-        setActiveDoc(docData);
-        setSnapshot(snapData);
+        const snap = await getDocumentVerification(selectedDocId as string);
+        const rec = ((snap?.land_record as unknown) as Record<string, unknown>) || {};
 
-        const rec =
-          ((snapData?.land_record as unknown) as Record<string, unknown> | undefined) ||
-          ((docData as unknown) as Record<string, unknown> | undefined) ||
-          {};
-
-        const fieldsObj: Record<string, string> = {};
-        CANONICAL_FIELDS.forEach((key) => {
-          fieldsObj[key] = rec[key] != null ? String(rec[key]) : "";
-        });
-        setEditableFields(fieldsObj);
+        setOwnerName(typeof rec.owner_name === "string" ? rec.owner_name : "");
+        setSurveyNumber(typeof rec.survey_number === "string" ? rec.survey_number : "");
+        setKhataNumber(typeof rec.khata_number === "string" ? rec.khata_number : "");
+        setLandArea(rec.area ? String(rec.area) : "");
+        setAreaUnit((rec.area_unit as string) || "Acres");
+        setVillage(typeof rec.village === "string" ? rec.village : "");
+        setTehsil(typeof rec.tehsil === "string" ? rec.tehsil : "");
+        setDistrict(typeof rec.district === "string" ? rec.district : "");
+        setRemarks("");
       } catch (err) {
-        console.warn("Unable to load document data:", err);
+        console.warn("Error fetching record data:", err);
       } finally {
-        setLoading(false);
+        setLoadingDetails(false);
       }
     }
-    loadDocumentDetails();
+
+    loadData();
   }, [selectedDocId]);
 
-  const handleDecision = async (statusDecision: "verified" | "needs_review" | "rejected") => {
-    if (!selectedDocId) {
-      alert("Please select a document from the queue first.");
-      return;
-    }
+  const filteredDocs = useMemo(() => {
+    const q = searchFilter.trim().toLowerCase();
+    if (!q) return documents;
+    return documents.filter((d) => d.filename.toLowerCase().includes(q));
+  }, [documents, searchFilter]);
 
-    const docId: string = selectedDocId;
-    setActionLoading(true);
-    setStatusMessage(null);
+  const activeDoc = documents.find((d) => d.id === selectedDocId);
+
+  // Adjudication dispatcher using verifyDocument
+  const handleAdjudicate = async (decision: "VERIFIED" | "ON_HOLD" | "REJECTED") => {
+    if (!selectedDocId) return;
+    setSubmitting(true);
+    setMessage(null);
+
+    const fieldsPayload: Record<string, string | null> = {
+      owner_name: ownerName.trim() || null,
+      survey_number: surveyNumber.trim() || null,
+      khata_number: khataNumber.trim() || null,
+      area: landArea.trim() || null,
+      area_unit: areaUnit.trim() || "Acres",
+      village: village.trim() || null,
+      tehsil: tehsil.trim() || null,
+      district: district.trim() || null,
+    };
+
+    const taggedComment = `[STATUS: ${decision}] ${remarks.trim() || "Decision logged by officer"}`;
 
     try {
-      const commentPayload = `[Decision: ${statusDecision.toUpperCase()}] ${remarks}`.trim();
-
-      // Format payload accurately according to backend type expectations
-      const payloadFields: Record<string, any> = {};
-      CANONICAL_FIELDS.forEach((key) => {
-        const raw = editableFields[key];
-        if (key === "area") {
-          const parsed = parseFloat(raw);
-          payloadFields[key] = isNaN(parsed) ? null : parsed;
-        } else {
-          payloadFields[key] = raw && raw.trim().length > 0 ? raw.trim() : null;
-        }
-      });
-
-      const response = await verifyDocument(docId, payloadFields, commentPayload);
-
-      const returnedStatus = response?.verification_status || statusDecision;
-
-      setStatusMessage({
+      await verifyDocument(selectedDocId, fieldsPayload, taggedComment);
+      setMessage({
+        text: `Record successfully marked as ${decision.replace("_", " ")}.`,
         type: "success",
-        text: `Record successfully adjudicated as: ${returnedStatus.toUpperCase().replace("_", " ")}!`,
       });
-
-      // Refresh snapshot and document queue
-      const updatedSnap = await getDocumentVerification(docId);
-      if (updatedSnap) setSnapshot(updatedSnap);
-
-      await refreshQueue(docId);
+      const rows = await listDocuments();
+      setDocuments(rows);
     } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : "Verification action failed.";
-      setStatusMessage({ type: "error", text: errMsg });
+      const msg = err instanceof Error ? err.message : "Verification request failed";
+      setMessage({ text: msg, type: "error" });
     } finally {
-      setActionLoading(false);
+      setSubmitting(false);
     }
   };
 
-  const currentStatus =
-    (snapshot?.land_record as any)?.verification_status ||
-    activeDoc?.verification_status ||
-    "pending";
-
   return (
-    <div className={styles.page}>
+    <div className={styles.page} style={{ height: "100vh", overflow: "hidden", display: "flex" }}>
       <aside className={styles.sidebar}>
         <div className={styles.brandBlock}>
           <div className={styles.brandMark}>B</div>
@@ -189,231 +176,373 @@ export default function AuditPage() {
         </div>
       </aside>
 
-      <main className={styles.mainContent}>
-        <div className={styles.topBar}>
+      <main
+        className={styles.mainContent}
+        style={{
+          flex: 1,
+          height: "100vh",
+          display: "flex",
+          flexDirection: "column",
+          padding: "14px 20px",
+          boxSizing: "border-box",
+          overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
           <div>
-            <div className={styles.eyebrow}>OFFICER WORKSPACE</div>
-            <h1>Audit &amp; Adjudication Desk</h1>
+            <div className={styles.eyebrow} style={{ fontSize: "10px", marginBottom: "2px" }}>OFFICER WORKSPACE</div>
+            <h1 style={{ fontSize: "20px", margin: 0 }}>Audit &amp; Adjudication Desk</h1>
           </div>
-          <div className={styles.headerMeta}>
-            <Link
-              href="/verification"
-              className={styles.primaryButton}
-              style={{ textDecoration: "none", backgroundColor: "#059669", color: "#ffffff" }}
-            >
-              Go to Verified Directory →
-            </Link>
-          </div>
+          <button
+            onClick={() => router.push("/verification")}
+            style={{
+              padding: "6px 14px",
+              backgroundColor: "#059669",
+              color: "#ffffff",
+              border: "none",
+              borderRadius: "6px",
+              fontWeight: 700,
+              fontSize: "12px",
+              cursor: "pointer",
+            }}
+          >
+            Go to Directory →
+          </button>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-          {/* Queue selector */}
-          <div className={styles.panel} style={{ padding: "14px 20px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", overflowX: "auto" }}>
-              <span style={{ fontSize: "12px", fontWeight: 700, color: "#64748b", textTransform: "uppercase", whiteSpace: "nowrap" }}>
-                Queue ({documents.length}):
-              </span>
-              {documents.length === 0 ? (
-                <span style={{ fontSize: "13px", color: "#94a3b8" }}>
-                  {loading ? "Loading records..." : "No documents available."}
-                </span>
-              ) : (
-                documents.map((doc) => {
-                  const isSelected = doc.id === selectedDocId;
-                  return (
-                    <button
-                      key={doc.id}
-                      type="button"
-                      onClick={() => setSelectedDocId(doc.id)}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "6px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        cursor: "pointer",
-                        border: isSelected ? "2px solid #0284c7" : "1px solid #cbd5e1",
-                        backgroundColor: isSelected ? "#f0f9ff" : "#ffffff",
-                        color: isSelected ? "#0369a1" : "#334155",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {doc.filename}
-                    </button>
-                  );
-                })
-              )}
-            </div>
+        {/* Status Notification Toast */}
+        {message && (
+          <div
+            style={{
+              padding: "8px 12px",
+              borderRadius: "6px",
+              fontSize: "12px",
+              fontWeight: 600,
+              marginBottom: "8px",
+              backgroundColor: message.type === "success" ? "#ecfdf5" : "#fef2f2",
+              border: `1px solid ${message.type === "success" ? "#a7f3d0" : "#fecaca"}`,
+              color: message.type === "success" ? "#065f46" : "#991b1b",
+            }}
+          >
+            {message.text}
           </div>
+        )}
 
-          {statusMessage && (
+        {/* 2-Column Split: Working Desk (Left) | Document Queue (Right) */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "14px", flex: 1, minHeight: 0 }}>
+          {/* LEFT: Compact Working Desk (Deed + Fields) */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1.2fr",
+              gap: "12px",
+              backgroundColor: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "10px",
+              padding: "12px",
+              minHeight: 0,
+            }}
+          >
+            {/* Deed Preview Column (Vertical A4 ratio) */}
             <div
               style={{
-                padding: "14px 18px",
+                display: "flex",
+                flexDirection: "column",
                 borderRadius: "8px",
-                fontSize: "13px",
-                fontWeight: 700,
-                backgroundColor: statusMessage.type === "success" ? "#ecfdf5" : "#fef2f2",
-                border: `1.5px solid ${statusMessage.type === "success" ? "#a7f3d0" : "#fecaca"}`,
-                color: statusMessage.type === "success" ? "#065f46" : "#991b1b",
+                overflow: "hidden",
+                border: "1px solid #cbd5e1",
+                minHeight: 0,
               }}
             >
-              {statusMessage.text}
-            </div>
-          )}
-
-          {/* 2-Column Adjudication Workspace */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: "20px" }}>
-            {/* Left: Document preview */}
-            <div className={styles.panel} style={{ display: "flex", flexDirection: "column", height: "720px", padding: "18px" }}>
-              <div className={styles.panelHeader} style={{ marginBottom: "12px" }}>
-                <h3>Original Deed (Reference)</h3>
-                <span
-                  style={{
-                    padding: "3px 8px",
-                    borderRadius: "4px",
-                    fontSize: "11px",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    backgroundColor: currentStatus === "verified" ? "#d1fae5" : "#f1f5f9",
-                    color: currentStatus === "verified" ? "#065f46" : "#475569",
-                  }}
-                >
-                  Status: {currentStatus}
+              <div
+                style={{
+                  padding: "6px 10px",
+                  backgroundColor: "#0f172a",
+                  color: "#f8fafc",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  display: "flex",
+                  justifyContent: "space-between",
+                }}
+              >
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {activeDoc?.filename || "Deed View"}
                 </span>
+                <span style={{ color: "#38bdf8" }}>PORTRAIT</span>
               </div>
-              <div style={{ flex: 1, backgroundColor: "#0b1329", borderRadius: "8px", overflow: "hidden" }}>
-                {activeDoc ? (
-                  <DocumentPreview
-                    documentId={activeDoc.id}
-                    filename={activeDoc.filename}
-                    fileType={activeDoc.file_type || "application/pdf"}
+
+              <div style={{ flex: 1, backgroundColor: "#334155", position: "relative", minHeight: 0 }}>
+                {previewUrl ? (
+                  <iframe
+                    src={previewUrl}
+                    title="Deed Document Preview"
+                    style={{ width: "100%", height: "100%", border: "none", display: "block" }}
                   />
                 ) : (
-                  <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "13px" }}>
+                  <div
+                    style={{
+                      height: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#94a3b8",
+                      fontSize: "12px",
+                    }}
+                  >
                     Select a document to preview
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Right: Correction form & adjudication controls */}
-            <div className={styles.panel} style={{ padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-              <div>
-                <div className={styles.panelHeader} style={{ marginBottom: "14px" }}>
-                  <h3>Cadastral Attributes (Editable)</h3>
-                  <span style={{ fontSize: "12px", color: "#059669", fontWeight: 700 }}>
-                    {activeDoc?.overall_confidence != null ? `${activeDoc.overall_confidence}% Confidence` : "Review"}
-                  </span>
-                </div>
+            {/* Cadastral Form + Adjudication Buttons Column */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "8px",
+                minHeight: 0,
+                overflowY: "auto",
+                paddingRight: "4px",
+              }}
+            >
+              <div style={{ fontSize: "12px", fontWeight: 800, color: "#0f172a", textTransform: "uppercase" }}>
+                Cadastral Record (Editable)
+              </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", maxHeight: "350px", overflowY: "auto", paddingRight: "4px" }}>
-                  {CANONICAL_FIELDS.map((fieldKey) => (
-                    <div key={fieldKey} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <label style={{ fontSize: "11px", fontWeight: 700, color: "#64748b" }}>
-                        {FIELD_LABELS[fieldKey] || fieldKey}
-                      </label>
-                      <input
-                        type="text"
-                        value={editableFields[fieldKey] ?? ""}
-                        onChange={(e) => setEditableFields({ ...editableFields, [fieldKey]: e.target.value })}
-                        style={{
-                          backgroundColor: "#f8fafc",
-                          border: "1px solid #cbd5e1",
-                          borderRadius: "6px",
-                          padding: "8px 10px",
-                          fontSize: "12px",
-                          color: "#0f172a",
-                          outline: "none",
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>
-                    Adjudication Remarks / Reason:
-                  </label>
-                  <textarea
-                    rows={2}
-                    placeholder="Provide reason for approval, rejection or putting on hold..."
-                    value={remarks}
-                    onChange={(e) => setRemarks(e.target.value)}
-                    style={{
-                      backgroundColor: "#f8fafc",
-                      border: "1px solid #cbd5e1",
-                      borderRadius: "6px",
-                      padding: "8px 10px",
-                      fontSize: "12px",
-                      color: "#0f172a",
-                      outline: "none",
-                      resize: "none",
-                    }}
+              {/* 2-Column Compact Input Grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Owner Name</label>
+                  <input
+                    type="text"
+                    value={ownerName}
+                    onChange={(e) => setOwnerName(e.target.value)}
+                    style={inputStyle}
                   />
                 </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Khasra / Survey #</label>
+                  <input
+                    type="text"
+                    value={surveyNumber}
+                    onChange={(e) => setSurveyNumber(e.target.value)}
+                    style={{ ...inputStyle, color: "#0284c7", fontWeight: 700 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Khata Number</label>
+                  <input
+                    type="text"
+                    value={khataNumber}
+                    onChange={(e) => setKhataNumber(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Land Area</label>
+                  <input
+                    type="text"
+                    value={landArea}
+                    onChange={(e) => setLandArea(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Area Unit</label>
+                  <input
+                    type="text"
+                    value={areaUnit}
+                    onChange={(e) => setAreaUnit(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Village</label>
+                  <input
+                    type="text"
+                    value={village}
+                    onChange={(e) => setVillage(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Tehsil / Taluk</label>
+                  <input
+                    type="text"
+                    value={tehsil}
+                    onChange={(e) => setTehsil(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>District</label>
+                  <input
+                    type="text"
+                    value={district}
+                    onChange={(e) => setDistrict(e.target.value)}
+                    style={inputStyle}
+                  />
+                </div>
+              </div>
 
-                {snapshot && (
-                  <div style={{ marginTop: "12px" }}>
-                    <AuditHistory verification={snapshot} />
-                  </div>
-                )}
+              {/* Officer Remarks */}
+              <div style={{ marginTop: "4px" }}>
+                <label style={{ fontSize: "10px", fontWeight: 700, color: "#475569" }}>Officer Remarks / Reason</label>
+                <textarea
+                  rows={2}
+                  value={remarks}
+                  onChange={(e) => setRemarks(e.target.value)}
+                  placeholder="Provide reason for approval, rejection or putting on hold..."
+                  style={{
+                    ...inputStyle,
+                    resize: "none",
+                    height: "46px",
+                  }}
+                />
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", marginTop: "16px", paddingTop: "14px", borderTop: "1px solid #f1f5f9" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.3fr", gap: "8px", marginTop: "auto", paddingTop: "8px" }}>
                 <button
                   type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleDecision("needs_review")}
+                  disabled={submitting}
+                  onClick={() => handleAdjudicate("ON_HOLD")}
                   style={{
-                    padding: "12px 8px",
+                    padding: "8px",
                     borderRadius: "6px",
-                    fontSize: "12px",
+                    fontSize: "11px",
                     fontWeight: 700,
+                    cursor: "pointer",
                     backgroundColor: "#fffbeb",
                     border: "1px solid #fde68a",
-                    color: "#b45309",
-                    cursor: actionLoading ? "not-allowed" : "pointer",
+                    color: "#92400e",
                   }}
                 >
-                  {actionLoading ? "Saving..." : "Put On Hold"}
+                  Put On Hold
                 </button>
                 <button
                   type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleDecision("rejected")}
+                  disabled={submitting}
+                  onClick={() => handleAdjudicate("REJECTED")}
                   style={{
-                    padding: "12px 8px",
+                    padding: "8px",
                     borderRadius: "6px",
-                    fontSize: "12px",
+                    fontSize: "11px",
                     fontWeight: 700,
+                    cursor: "pointer",
                     backgroundColor: "#fef2f2",
                     border: "1px solid #fecaca",
-                    color: "#b91c1c",
-                    cursor: actionLoading ? "not-allowed" : "pointer",
+                    color: "#991b1b",
                   }}
                 >
-                  {actionLoading ? "Saving..." : "Reject Deed"}
+                  Reject Deed
                 </button>
                 <button
                   type="button"
-                  disabled={actionLoading}
-                  onClick={() => handleDecision("verified")}
+                  disabled={submitting}
+                  onClick={() => handleAdjudicate("VERIFIED")}
                   style={{
-                    padding: "12px 8px",
+                    padding: "8px",
                     borderRadius: "6px",
-                    fontSize: "12px",
+                    fontSize: "11px",
                     fontWeight: 700,
+                    cursor: "pointer",
                     backgroundColor: "#059669",
                     border: "none",
                     color: "#ffffff",
-                    cursor: actionLoading ? "not-allowed" : "pointer",
-                    boxShadow: "0 2px 4px rgba(5, 150, 105, 0.2)",
                   }}
                 >
-                  {actionLoading ? "Saving..." : "Accept & Verify"}
+                  Accept &amp; Verify
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* RIGHT SIDEBAR: Document Queue with Search */}
+          <div
+            style={{
+              backgroundColor: "#ffffff",
+              border: "1px solid #e2e8f0",
+              borderRadius: "10px",
+              padding: "12px",
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 800, color: "#0f172a", textTransform: "uppercase" }}>
+                Queue ({documents.length})
+              </div>
+              <span style={{ fontSize: "10px", color: "#64748b" }}>Pick file</span>
+            </div>
+
+            {/* Search Input */}
+            <input
+              type="text"
+              placeholder="Search file..."
+              value={searchFilter}
+              onChange={(e) => setSearchFilter(e.target.value)}
+              style={{
+                width: "100%",
+                padding: "6px 10px",
+                borderRadius: "6px",
+                border: "1px solid #cbd5e1",
+                fontSize: "12px",
+                marginBottom: "8px",
+                outline: "none",
+                boxSizing: "border-box",
+              }}
+            />
+
+            {/* Document Queue List */}
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px", minHeight: 0 }}>
+              {loadingDocs ? (
+                <div style={{ padding: "16px", textAlign: "center", fontSize: "11px", color: "#94a3b8" }}>
+                  Loading queue...
+                </div>
+              ) : filteredDocs.length === 0 ? (
+                <div style={{ padding: "16px", textAlign: "center", fontSize: "11px", color: "#94a3b8" }}>
+                  No records match.
+                </div>
+              ) : (
+                filteredDocs.map((doc) => {
+                  const isSelected = doc.id === selectedDocId;
+                  return (
+                    <button
+                      key={doc.id}
+                      onClick={() => setSelectedDocId(doc.id)}
+                      style={{
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        border: isSelected ? "2px solid #0284c7" : "1px solid #e2e8f0",
+                        backgroundColor: isSelected ? "#f0f9ff" : "#ffffff",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: isSelected ? 700 : 500,
+                          color: isSelected ? "#0369a1" : "#1e293b",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {doc.filename}
+                      </div>
+                      <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>
+                        Status: {doc.verification_status || "Needs Review"}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -421,3 +550,14 @@ export default function AuditPage() {
     </div>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "5px 8px",
+  borderRadius: "5px",
+  border: "1px solid #cbd5e1",
+  fontSize: "12px",
+  outline: "none",
+  boxSizing: "border-box",
+  marginTop: "2px",
+};

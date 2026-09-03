@@ -1,68 +1,48 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getDashboardStats, type DashboardStats } from "@/lib/documents";
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { listDocuments } from "@/lib/documents";
+import type { DocumentRecord } from "@/lib/document-types";
 import styles from "./page.module.css";
 
 const navigation = [
   { label: "Dashboard", href: "/" },
   { label: "Upload Document", href: "/upload" },
   { label: "Documents", href: "/documents" },
-  { label: "Verification", href: "/verification" },
+  { label: "Verified Records", href: "/verification" },
   { label: "GIS", href: "/gis" },
-  { label: "Audit", href: "/audit" },
   { label: "Settings", href: "/settings" },
 ];
 
-export default function Home() {
+export default function DashboardPage() {
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [backendStatus, setBackendStatus] = useState<"checking" | "connected" | "offline">("checking");
-  const [dashboard, setDashboard] = useState<DashboardStats | null>(null);
-  const [dashboardLoading, setDashboardLoading] = useState(true);
-  const [dashboardError, setDashboardError] = useState<string | null>(null);
 
   useEffect(() => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-
-    fetch(`${apiUrl}/api/health`)
-      .then((response) => {
-        if (response.ok) {
-          setBackendStatus("connected");
-        } else {
-          setBackendStatus("offline");
-        }
-      })
-      .catch(() => {
-        setBackendStatus("offline");
-      });
-  }, []);
-
-  useEffect(() => {
-    async function loadDashboard() {
+    async function loadStats() {
       try {
-        setDashboard(await getDashboardStats());
-      } catch (loadError) {
-        setDashboardError(loadError instanceof Error ? loadError.message : "Unable to load dashboard statistics.");
+        const docs = await listDocuments();
+        setDocuments(docs);
+        setBackendStatus("connected");
+      } catch (err) {
+        console.warn("Error loading dashboard documents:", err);
+        setBackendStatus("offline");
       } finally {
-        setDashboardLoading(false);
+        setLoading(false);
       }
     }
-
-    loadDashboard();
+    loadStats();
   }, []);
 
-  const backendLabel =
-    backendStatus === "connected"
-      ? "Connected"
-      : backendStatus === "offline"
-        ? "Offline"
-        : "Checking";
-
-  const backendClass =
-    backendStatus === "connected"
-      ? styles.online
-      : backendStatus === "offline"
-        ? styles.offline
-        : styles.pending;
+  const totalUploaded = documents.length;
+  const verifiedCount = documents.filter(
+    (d) => (d.verification_status || "").toLowerCase() === "verified"
+  ).length;
+  const pendingCount = documents.filter(
+    (d) => (d.verification_status || "").toLowerCase() !== "verified"
+  ).length;
 
   return (
     <div className={styles.page}>
@@ -70,114 +50,218 @@ export default function Home() {
         <div className={styles.brandBlock}>
           <div className={styles.brandMark}>B</div>
           <div>
-            <p className={styles.brandName}>BhuVerify AI</p>
-            <span className={styles.brandSubtext}>Land Record Intelligence</span>
+            <div className={styles.brandName}>BhuVerify AI</div>
+            <div className={styles.brandSubtext}>Land Record Intelligence</div>
           </div>
         </div>
 
-        <nav className={styles.nav} aria-label="Main navigation">
-          {navigation.map((item, index) => (
-            <a
-              key={item.label}
-              href={item.href}
-              className={`${styles.navItem} ${index === 0 ? styles.active : ""}`}
-            >
-              {item.label}
-            </a>
-          ))}
+        <nav className={styles.nav}>
+          {navigation.map((item) => {
+            const isActive = item.href === "/";
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`${styles.navItem} ${isActive ? styles.active : ""}`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className={styles.sidebarFootnote}>
-          Live operator overview from the secured records service.
+          BhuVerify • Central Intelligence
         </div>
       </aside>
 
       <main className={styles.mainContent}>
-        <header className={styles.topBar}>
+        <div className={styles.topBar}>
           <div>
-            <p className={styles.eyebrow}>Dashboard</p>
+            <div className={styles.eyebrow}>DASHBOARD</div>
             <h1>BhuVerify AI</h1>
           </div>
-
-          <div className={styles.headerMeta}>
-            <span className={styles.sampleBadge}>Sample / Prototype</span>
-            <div className={styles.backendStatus}>
-              <span>Backend:</span>
-              <span className={`${styles.dot} ${backendClass}`} aria-live="polite">
-                ●
-              </span>
-              <span>{backendLabel}</span>
-            </div>
+          <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+            <span
+              style={{
+                fontSize: "12px",
+                padding: "4px 10px",
+                borderRadius: "20px",
+                backgroundColor: "#f1f5f9",
+                border: "1px solid #cbd5e1",
+                color: "#475569",
+              }}
+            >
+              Sample / Prototype
+            </span>
+            <span
+              style={{
+                fontSize: "12px",
+                padding: "4px 10px",
+                borderRadius: "20px",
+                backgroundColor: backendStatus === "connected" ? "#ecfdf5" : "#fef2f2",
+                border: `1px solid ${backendStatus === "connected" ? "#a7f3d0" : "#fecaca"}`,
+                color: backendStatus === "connected" ? "#065f46" : "#991b1b",
+                fontWeight: 600,
+              }}
+            >
+              Backend: {backendStatus === "connected" ? "● Connected" : "○ Offline (Check Uvicorn)"}
+            </span>
           </div>
-        </header>
-
-        <section className={styles.hero}>
-          <div>
-            <p className={styles.heroLabel}>Intelligent Land Record Digitization &amp; Validation System</p>
-            <h2>Digital verification workflow for land records and parcel documentation.</h2>
-          </div>
-          <a href="/upload" className={styles.primaryButton}>
-            Upload Land Record
-          </a>
-        </section>
-
-        <div className={styles.headerMeta} style={{ marginBottom: 20 }}>
-          <a href="/upload" className={styles.primaryButton}>Upload Document</a>
-          <a href="/documents" className={styles.primaryButton}>View Records</a>
-          <a href="/documents" className={styles.primaryButton}>Pending Verification</a>
         </div>
 
-        <section className={styles.statsGrid} aria-label="Summary statistics">
-          {[
-            ["Documents Uploaded", dashboard?.documents_uploaded, "Live"],
-            ["Processed Records", dashboard?.processed_records, "Land records"],
-            ["Verified Records", dashboard?.verified_records, "Verified"],
-            ["Pending Verification", dashboard?.pending_verification, "Awaiting review"],
-            ["Validation Issues", dashboard?.validation_issues, "Warnings + errors"],
-          ].map(([label, value, change]) => (
-            <article key={String(label)} className={styles.statCard}>
-              <span>{label}</span>
-              <strong>{dashboardLoading ? "..." : String(value ?? 0)}</strong>
-              <em>{change}</em>
-            </article>
-          ))}
-        </section>
+        <div className={styles.panel} style={{ marginBottom: "24px", padding: "28px" }}>
+          <div style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.08em", color: "#64748b", textTransform: "uppercase", marginBottom: "8px" }}>
+            INTELLIGENT LAND RECORD DIGITIZATION &amp; VALIDATION SYSTEM
+          </div>
+          <h2 style={{ fontSize: "24px", fontWeight: 800, color: "#0f172a", marginBottom: "20px", lineHeight: 1.3 }}>
+            Digital verification workflow for land records<br />and parcel documentation.
+          </h2>
 
-        {dashboardError && <p style={{ color: "#b42318", marginBottom: 20 }}>{dashboardError}</p>}
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+            <Link
+              href="/upload"
+              style={{
+                padding: "10px 18px",
+                backgroundColor: "#0f172a",
+                color: "#ffffff",
+                borderRadius: "8px",
+                fontWeight: 700,
+                fontSize: "13px",
+                textDecoration: "none",
+              }}
+            >
+              Upload Land Record
+            </Link>
 
-        <section className={styles.contentGrid}>
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <h3>Recent document queue</h3>
-              <span>Live feed</span>
-            </div>
-            <ul className={styles.list}>
-              {!dashboardLoading && dashboard?.recent_records.length === 0 && <li className={styles.listItem}>No documents processed yet.</li>}
-              {dashboard?.recent_records.map((item) => (
-                <li key={item.id} className={styles.listItem}>
-                  <div>
-                    <a href={`/documents/${item.id}`}><strong>{item.filename}</strong></a>
-                    <small>{item.overall_confidence == null ? "Not processed" : `${item.overall_confidence}% confidence`}</small>
-                  </div>
-                  <span className={styles.badge}>{item.verification_status === "verified" ? "Verified" : item.verification_status === "needs_review" ? "Needs Review" : "Pending"}</span>
-                </li>
-              ))}
-            </ul>
-            <a href="/documents" style={{ display: "inline-block", marginTop: 16, color: "#0f172a", fontWeight: 700 }}>View all records →</a>
-          </article>
+            <Link
+              href="/verification"
+              style={{
+                padding: "10px 18px",
+                backgroundColor: "#ffffff",
+                border: "1px solid #cbd5e1",
+                color: "#0f172a",
+                borderRadius: "8px",
+                fontWeight: 700,
+                fontSize: "13px",
+                textDecoration: "none",
+              }}
+            >
+              View Records
+            </Link>
 
-          <article className={styles.panel}>
-            <div className={styles.panelHeader}>
-              <h3>Validation watchlist</h3>
-              <span>Needs attention</span>
+            <Link
+              href="/documents?tab=pending"
+              style={{
+                padding: "10px 18px",
+                backgroundColor: "#ffffff",
+                border: "1px solid #cbd5e1",
+                color: "#0f172a",
+                borderRadius: "8px",
+                fontWeight: 700,
+                fontSize: "13px",
+                textDecoration: "none",
+              }}
+            >
+              Pending Verification
+            </Link>
+          </div>
+        </div>
+
+        {/* Metric Cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
+          <div className={styles.panel} style={{ padding: "20px" }}>
+            <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Documents Uploaded</div>
+            <div style={{ fontSize: "28px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
+              {loading ? "..." : totalUploaded}
             </div>
-            <div className={styles.watchlist}>
-              <div><label>Passed</label><strong>{dashboardLoading ? "..." : dashboard?.validation_overview.passed ?? 0}</strong></div>
-              <div><label>Warnings</label><strong>{dashboardLoading ? "..." : dashboard?.validation_overview.warnings ?? 0}</strong></div>
-              <div><label>Errors</label><strong>{dashboardLoading ? "..." : dashboard?.validation_overview.errors ?? 0}</strong></div>
+            <div style={{ fontSize: "12px", color: "#059669", fontWeight: 600, marginTop: "4px" }}>Live</div>
+          </div>
+
+          <div className={styles.panel} style={{ padding: "20px" }}>
+            <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Processed Records</div>
+            <div style={{ fontSize: "28px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
+              {loading ? "..." : totalUploaded}
             </div>
-          </article>
-        </section>
+            <div style={{ fontSize: "12px", color: "#059669", fontWeight: 600, marginTop: "4px" }}>Land records</div>
+          </div>
+
+          <div className={styles.panel} style={{ padding: "20px" }}>
+            <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Verified Records</div>
+            <div style={{ fontSize: "28px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
+              {loading ? "..." : verifiedCount}
+            </div>
+            <div style={{ fontSize: "12px", color: "#059669", fontWeight: 600, marginTop: "4px" }}>Verified</div>
+          </div>
+
+          <div className={styles.panel} style={{ padding: "20px" }}>
+            <div style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Pending Verification</div>
+            <div style={{ fontSize: "28px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
+              {loading ? "..." : pendingCount}
+            </div>
+            <div style={{ fontSize: "12px", color: "#d97706", fontWeight: 600, marginTop: "4px" }}>Awaiting review</div>
+          </div>
+        </div>
+
+        {/* Live Feed Table Preview */}
+        <div className={styles.panel} style={{ padding: "0px", overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>Recent Document Queue</span>
+            <Link href="/documents" style={{ fontSize: "12px", fontWeight: 700, color: "#0284c7", textDecoration: "none" }}>
+              View All Queue →
+            </Link>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+            <thead>
+              <tr style={{ backgroundColor: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#64748b", fontSize: "11px", fontWeight: 700, textTransform: "uppercase" }}>
+                <th style={{ padding: "12px 18px", textAlign: "left" }}>Filename</th>
+                <th style={{ padding: "12px 18px", textAlign: "left" }}>Type</th>
+                <th style={{ padding: "12px 18px", textAlign: "left" }}>Status</th>
+                <th style={{ padding: "12px 18px", textAlign: "right" }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={4} style={{ padding: "24px", textAlign: "center", color: "#94a3b8" }}>Loading queue...</td>
+                </tr>
+              ) : documents.length === 0 ? (
+                <tr>
+                  <td colSpan={4} style={{ padding: "24px", textAlign: "center", color: "#64748b" }}>No documents uploaded yet.</td>
+                </tr>
+              ) : (
+                documents.slice(0, 5).map((d) => (
+                  <tr key={d.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "12px 18px", fontWeight: 600, color: "#0f172a" }}>{d.filename}</td>
+                    <td style={{ padding: "12px 18px", color: "#64748b", fontFamily: "monospace" }}>{d.file_type}</td>
+                    <td style={{ padding: "12px 18px" }}>
+                      <span
+                        style={{
+                          padding: "3px 8px",
+                          borderRadius: "6px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          backgroundColor: (d.verification_status || "").toLowerCase() === "verified" ? "#ecfdf5" : "#fffbeb",
+                          color: (d.verification_status || "").toLowerCase() === "verified" ? "#065f46" : "#92400e",
+                        }}
+                      >
+                        {(d.verification_status || "PENDING").toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={{ padding: "12px 18px", textAlign: "right" }}>
+                      <Link
+                        href={`/documents?tab=pending`}
+                        style={{ fontSize: "12px", fontWeight: 700, color: "#0284c7", textDecoration: "none" }}
+                      >
+                        Inspect →
+                      </Link>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </main>
     </div>
   );
