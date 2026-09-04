@@ -25,7 +25,7 @@ app.add_middleware(
 
 # Mount API Routers
 app.include_router(documents_router)
-app.include_router(gis_router, prefix="/api/gis", tags=["GIS"])
+app.include_router(gis_router)
 
 
 # Health Check Endpoints (both /api/health and /health supported)
@@ -37,6 +37,6 @@ def health_check():
         "service": "BhuVerify API",
         "endpoints": {
             "documents": "/api/documents",
-            "gis": "/api/gis/plot-parcel",
+            "gis": "/api/documents/{document_id}/gis",
         },
     }

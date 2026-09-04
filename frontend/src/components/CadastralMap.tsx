@@ -33,7 +33,7 @@ function MapBoundsController({
   const map = useMap();
 
   useEffect(() => {
-    setTimeout(() => map.invalidateSize(), 200);
+    setTimeout(() => map.invalidateSize(), 250);
 
     if (geojson) {
       try {
@@ -69,7 +69,7 @@ export default function CadastralMap({
   landArea,
   areaUnit,
 }: CadastralMapProps) {
-  const [center, setCenter] = useState<[number, number]>([0, 0]);
+  const [center, setCenter] = useState<[number, number]>([12.815, 80.220]);
   const [geojson, setGeojson] = useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
   const [locationName, setLocationName] = useState<string>("");
   const [areaSqM, setAreaSqM] = useState<number>(0);
@@ -79,40 +79,33 @@ export default function CadastralMap({
     async function fetchParcelGeometry() {
       setGeojson(null);
       setGeometryError(null);
-      if (!tehsil || landArea == null || !areaUnit) return;
+      if (!documentId) return;
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
-        console.log("GIS document ID:", documentId);
-        console.log("GIS extracted data:", { surveyNumber, village, tehsil, landArea, areaUnit });
-        let res = await fetch(`${apiUrl}/api/documents/${encodeURIComponent(documentId)}/gis`);
-        if (!res.ok) {
-          res = await fetch(`${apiUrl}/api/documents/${encodeURIComponent(documentId)}/gis`);
-        }
+        const res = await fetch(`${apiUrl}/api/documents/${encodeURIComponent(documentId)}/gis`);
         const data = await res.json();
-        console.log("GIS API response:", data);
-        if (!res.ok) {
+        
+        if (!res.ok || !data.success) {
           throw new Error(data.detail || "GIS request failed");
         }
-        const feature = data.gis_boundary?.geojson;
-        const coordinates = feature?.geometry?.coordinates?.[0];
-        const validCoordinates = Array.isArray(coordinates) && coordinates.length >= 4 && coordinates.every(
-          (point: unknown) => Array.isArray(point) && point.length >= 2 &&
-            Number.isFinite(point[0]) && Number.isFinite(point[1]) &&
-            point[0] >= -180 && point[0] <= 180 && point[1] >= -90 && point[1] <= 90
-        );
-        const closedRing = validCoordinates && coordinates[0][0] === coordinates.at(-1)[0] && coordinates[0][1] === coordinates.at(-1)[1];
-        if (data.gis_boundary?.status === "SUCCESS" && feature?.type === "Feature" && feature.geometry?.type === "Polygon" && validCoordinates && closedRing) {
-          console.log("GIS GeoJSON:", feature);
-          console.log("GIS GeoJSON type:", feature.type, "geometry:", feature.geometry.type, "coordinates:", coordinates);
-          setCenter([data.gis_boundary.center[0], data.gis_boundary.center[1]]);
+
+        const boundary = data.gis_boundary;
+        const feature = boundary?.geojson;
+        const coords = feature?.geometry?.coordinates?.[0];
+
+        if (boundary?.center) {
+          setCenter([boundary.center[0], boundary.center[1]]);
+        }
+
+        if (feature && coords && coords.length >= 4) {
           setLocationName(feature.properties?.location || "");
           setAreaSqM(feature.properties?.area_sq_m || 0);
           setGeojson(feature);
         } else {
-          setGeometryError("Spatial boundary could not be generated from the extracted record.");
+          setGeometryError("Spatial boundary could not be generated from the record.");
         }
       } catch (err) {
-        setGeometryError("Spatial boundary could not be generated from the extracted record.");
+        setGeometryError("Spatial boundary could not be generated from the record.");
         console.error("GIS Plotting failed:", err);
       }
     }
@@ -121,7 +114,7 @@ export default function CadastralMap({
   }, [documentId, tehsil, village, surveyNumber, landArea, areaUnit]);
 
   const unavailable = "Not available from document";
-  const canPlot = Boolean(tehsil && landArea != null && areaUnit);
+  const canPlot = Boolean(documentId);
 
   return (
     <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "12px" }}>
@@ -155,7 +148,7 @@ export default function CadastralMap({
         </div>
       </div>
 
-      {/* Satellite Map Container with Glowing Cyan Polygon */}
+      {/* Satellite Map Container */}
       {canPlot ? (
         <div
           style={{
@@ -172,46 +165,48 @@ export default function CadastralMap({
           <MapContainer
             center={center}
             zoom={16}
-            maxZoom={20}
+            maxZoom={19}
             scrollWheelZoom={true}
             style={{ height: "100%", width: "100%" }}
           >
-          <MapBoundsController center={center} geojson={geojson} />
+            <MapBoundsController center={center} geojson={geojson} />
 
-          <TileLayer
-            url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-            attribution="&copy; Google Maps"
-            maxZoom={20}
-          />
-
-          {/* Full Parcel Area Polygon */}
-          {geojson && (
-            <GeoJSON
-              data={geojson}
-              pathOptions={{
-                color: "#00f0ff",
-                fillColor: "#00f0ff",
-                fillOpacity: 0.45,
-                weight: 4,
-              }}
+            <TileLayer
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+              maxZoom={19}
             />
-          )}
 
-            {geojson && <Marker position={center}>
-              <Popup>
-                <div style={{ color: "#0f172a" }}>
-                  <strong style={{ fontSize: "14px" }}>Plot #{surveyNumber || "Not available"}</strong>
-                  <hr style={{ margin: "4px 0" }} />
-                  <div><strong>Area:</strong> {landArea} {areaUnit} ({areaSqM.toLocaleString()} m²)</div>
-                  <div><strong>Location:</strong> {locationName}</div>
-                </div>
-              </Popup>
-            </Marker>}
+            {/* Parcel Polygon Overlay */}
+            {geojson && (
+              <GeoJSON
+                data={geojson}
+                pathOptions={{
+                  color: "#00f0ff",
+                  fillColor: "#00f0ff",
+                  fillOpacity: 0.45,
+                  weight: 4,
+                }}
+              />
+            )}
+
+            {geojson && (
+              <Marker position={center}>
+                <Popup>
+                  <div style={{ color: "#0f172a" }}>
+                    <strong style={{ fontSize: "14px" }}>Plot #{surveyNumber || "Parcel"}</strong>
+                    <hr style={{ margin: "4px 0" }} />
+                    <div><strong>Area:</strong> {landArea} {areaUnit} ({areaSqM.toLocaleString()} m²)</div>
+                    <div><strong>Location:</strong> {locationName}</div>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
           </MapContainer>
         </div>
       ) : (
         <p style={{ color: "#cbd5e1", margin: 0 }}>
-          A map cannot be generated until the document provides a tehsil and area.
+          A map cannot be generated until a document is selected.
         </p>
       )}
       {geometryError && <p style={{ color: "#fca5a5", margin: 0 }}>{geometryError}</p>}

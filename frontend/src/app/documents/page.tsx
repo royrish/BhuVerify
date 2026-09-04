@@ -336,7 +336,7 @@ function DocumentsQueueContent() {
               color: filterTab === "all" ? "#0369a1" : "#475569",
             }}
           >
-            Pending ({counts.all})
+            All ({counts.all})
           </button>
           <button
             type="button"
@@ -384,7 +384,7 @@ function DocumentsQueueContent() {
               color: filterTab === "pending" ? "#0369a1" : "#475569",
             }}
           >
-            Unreviewed ({counts.pending})
+            Pending ({counts.pending})
           </button>
         </div>
 
