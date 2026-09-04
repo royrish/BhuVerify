@@ -81,7 +81,7 @@ function DocumentsQueueContent() {
     setLoading(true);
     try {
       const docs = await listDocuments();
-      const unverifiedList: DocumentItem[] = [];
+      const queueList: DocumentItem[] = [];
 
       await Promise.all(
         docs.map(async (doc) => {
@@ -124,9 +124,10 @@ function DocumentsQueueContent() {
               if (docStatus === "verified" || recStatus === "verified") rawStatus = "verified";
               else if (docStatus === "rejected" || recStatus === "rejected") rawStatus = "rejected";
               else if (docStatus === "needs_review" || recStatus === "needs_review") rawStatus = "needs_review";
+              else rawStatus = "pending";
             }
 
-            // Strictly filter out verified documents from this queue
+            // Exclude fully verified items from the active adjudication queue
             if (rawStatus === "verified") {
               return;
             }
@@ -134,7 +135,7 @@ function DocumentsQueueContent() {
             const locParts = [rec.village, rec.tehsil].filter((v) => typeof v === "string" && v.trim().length > 0);
             const locationStr = locParts.length > 0 ? locParts.join(", ") : "—";
 
-            unverifiedList.push({
+            queueList.push({
               id: doc.id,
               filename: doc.filename,
               owner_name: typeof rec.owner_name === "string" && rec.owner_name ? rec.owner_name : "—",
@@ -154,7 +155,7 @@ function DocumentsQueueContent() {
           } catch {
             const fallbackStatus = (doc.verification_status || "pending").toLowerCase();
             if (fallbackStatus !== "verified") {
-              unverifiedList.push({
+              queueList.push({
                 id: doc.id,
                 filename: doc.filename,
                 owner_name: "—",
@@ -171,7 +172,7 @@ function DocumentsQueueContent() {
         })
       );
 
-      setRecords(unverifiedList);
+      setRecords(queueList);
     } catch (err) {
       console.warn("Unable to load document queue:", err);
     } finally {
